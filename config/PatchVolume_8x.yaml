@@ -1,10 +1,10 @@
 model:
   seed: 1234
-  batch_size: 24
+  batch_size: 4
   num_workers: 8
 
   gpus: 1
-  default_root_dir: input/your/results/dir
+  default_root_dir: ./results
   resume_from_checkpoint: 
   max_steps: 1000000
   max_epochs: 10000
@@ -31,8 +31,72 @@ model:
   num_groups: 24
   stage: 1
 
+wandb:
+  wandb_project: "3DMedDiffusion"
+  wandb_name: "PatchVolume_8x"
+
 dataset:
-  root_dir: 3DMedDiffusion/config/PatchVolume_data.json
+  _target_: dataset.monai_dataset.MonaiDataset
+  data_path: /vol/miltank/projects/ukbb/data/brain/nifti/assessment2
+  file_names: [T1/T1_brain.nii.gz, T2_FLAIR/T2_FLAIR_brain.nii.gz]
+  sbj_include: null
+  sbj_exclude: null
+  n_subjects: 10_00
+  split: [0.8, 0.1, 0.1]
+  patch_size: 64
   image_channels: 1
   imgtype: CT
-  patch_size: 64
+
+data:
+  train_transforms:
+    - _target_: monai.transforms.LoadImaged
+      keys: ["image"]
+    - _target_: monai.transforms.EnsureChannelFirstd
+      keys: ["image"]
+    - _target_: monai.transforms.SpatialPadd
+      keys: ["image"]
+      spatial_size: [160, 176, 144]
+      mode: constant
+      constant_values: 0
+    - _target_: monai.transforms.RandSpatialCropd
+      keys: ["image"]
+      roi_size: [64, 64, 64]
+    - _target_: monai.transforms.ClipIntensityPercentilesd
+      keys: ["image"]
+      lower: 0.5
+      upper: 99.5
+    - _target_: monai.transforms.ScaleIntensityd
+      keys: ["image"]
+      minv: -1
+      maxv: 1
+    - _target_: monai.transforms.ToTensord
+      keys: ["image"]
+    - _target_: monai.transforms.EnsureTyped
+      keys: ["image"]
+      track_meta: False
+  eval_transforms:
+    - _target_: monai.transforms.LoadImaged
+      keys: ["image"]
+    - _target_: monai.transforms.EnsureChannelFirstd
+      keys: ["image"]
+    - _target_: monai.transforms.SpatialPadd
+      keys: ["image"]
+      spatial_size: [160, 176, 144]
+      mode: constant
+      constant_values: 0
+    - _target_: monai.transforms.CenterSpatialCropd
+      keys: ["image"]
+      roi_size: [160, 176, 144]
+    - _target_: monai.transforms.ClipIntensityPercentilesd
+      keys: ["image"]
+      lower: 0.5
+      upper: 99.5
+    - _target_: monai.transforms.ScaleIntensityd
+      keys: ["image"]
+      minv: -1
+      maxv: 1
+    - _target_: monai.transforms.ToTensord
+      keys: ["image"]
+    - _target_: monai.transforms.EnsureTyped
+      keys: ["image"]
+      track_meta: False

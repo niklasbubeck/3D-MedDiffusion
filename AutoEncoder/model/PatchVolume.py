@@ -221,26 +221,28 @@ class patchvolumeAE(pl.LightningModule):
 
     def forward(self, x, optimizer_idx=None, log_volume=False,val=False):
         B, C, D, H, W = x.shape ##ｂ　ｃ　ｚ　ｘ　ｙ
+        print(self.stage, val)
+        # if self.stage == 1 and val==False:
+        x_input = x
 
-        if self.stage == 1 and val==False:
-            x_input = x
+        # else:
+        #     x_input = x.unfold(2,self.patch_size,self.patch_size).unfold(3,self.patch_size,self.patch_size).unfold(4,self.patch_size,self.patch_size)
+        #     x_input = rearrange(x_input , 'b c p1 p2 p3 d h w -> (b p1 p2 p3) c d h w')
 
-        else:
-            x_input = x.unfold(2,self.patch_size,self.patch_size).unfold(3,self.patch_size,self.patch_size).unfold(4,self.patch_size,self.patch_size)
-            x_input = rearrange(x_input , 'b c p1 p2 p3 d h w -> (b p1 p2 p3) c d h w')
+        print(x_input.shape)
 
         z = self.pre_vq_conv(self.encoder(x_input)) 
         vq_output = self.codebook(z)
         embeddings = vq_output['embeddings']
 
-        if self.stage == 1 and val == False:
-            x_recon = self.decoder(self.post_vq_conv(embeddings))
+        # if self.stage == 1 and val == False:
+        x_recon = self.decoder(self.post_vq_conv(embeddings))
 
-        else:
-            embeddings = rearrange(embeddings, '(b p) c d h w -> b p c d h w', b=B) 
-            embeddings = rearrange(embeddings, 'b (p1 p2 p3) c d h w -> b c (p1 d) (p2 h) (p3 w)',
-                        p1=D//self.patch_size, p2=H//self.patch_size, p3=W//self.patch_size)
-            x_recon = self.decoder(self.post_vq_conv(embeddings))
+        # else:
+        #     embeddings = rearrange(embeddings, '(b p) c d h w -> b p c d h w', b=B) 
+        #     embeddings = rearrange(embeddings, 'b (p1 p2 p3) c d h w -> b c (p1 d) (p2 h) (p3 w)',
+        #                 p1=D//self.patch_size, p2=H//self.patch_size, p3=W//self.patch_size)
+        #     x_recon = self.decoder(self.post_vq_conv(embeddings))
         # elif self.stage==1 and val == True:
         #     embeddings = rearrange(embeddings, '(b p) c d h w -> b p c d h w', b=B) 
         #     embeddings = rearrange(embeddings, 'b (p1 p2 p3) c d h w -> b c (p1 d) (p2 h) (p3 w)',
@@ -263,7 +265,7 @@ class patchvolumeAE(pl.LightningModule):
         #                 p1=D//self.patch_size, p2=H//self.patch_size, p3=W//self.patch_size)
         #     x_recon = self.decoder(self.post_vq_conv(embeddings))
         
-
+        print(x_recon.shape, x.shape)
         recon_loss = F.l1_loss(x_recon, x) * self.l1_weight
 
         if log_volume:
@@ -331,7 +333,8 @@ class patchvolumeAE(pl.LightningModule):
 
     
     def training_step(self, batch, batch_idx):
-        x = batch['data']
+        print("making a training step")
+        x = batch['image']
         opts = self.optimizers()
         optimizer_idx = batch_idx % len(opts)
         if self.global_step < self.discriminator_iter_start:
@@ -365,7 +368,8 @@ class patchvolumeAE(pl.LightningModule):
             raise NotImplementedError
 
     def validation_step(self, batch, batch_idx):
-        x = batch['data']  # TODO: batch['stft']
+        print("making a validation step")
+        x = batch['image']  # TODO: batch['stft']
         recon_loss, _, vq_output, perceptual_loss = self.forward(x,val=True)
         # print(recon_loss, perceptual_loss)
         self.log('val/recon_loss', recon_loss, prog_bar=True,sync_dist=True)
@@ -400,7 +404,7 @@ class patchvolumeAE(pl.LightningModule):
 
     def log_volumes(self, batch, **kwargs):
         log = dict()
-        x = batch['data']
+        x = batch['image']
         x, x_rec = self(x, log_volume=True, val=(kwargs['split']=='val'))
         log["inputs"] = x
         log["reconstructions"] = x_rec

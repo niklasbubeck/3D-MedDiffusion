@@ -6,14 +6,17 @@ project_root = os.path.abspath(os.path.join(current_dir, ".."))
 sys.path.append(project_root)
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 from AutoEncoder.model.PatchVolume import patchvolumeAE
 from train.callbacks import VolumeLogger
 from dataset.vqgan_4x import VQGANDataset_4x
 from dataset.vqgan import VQGANDataset
+from dataset.monai_dataset import MonaiDataset
 import argparse
+from utils import instantiate_from_config
 from omegaconf import OmegaConf
+from utils import get_monai_transforms
 
 os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
 
@@ -22,16 +25,24 @@ def main(cfg_path: str):
     cfg = OmegaConf.load(cfg_path)
     pl.seed_everything(cfg.model.seed)
     downsample_ratio = cfg.model.downsample[0]
-    if downsample_ratio == 4:
-        train_dataset = VQGANDataset_4x(
-            root_dir=cfg.dataset.root_dir,augmentation=True,split='train',stage=cfg.model.stage)
-        val_dataset = VQGANDataset_4x(
-            root_dir=cfg.dataset.root_dir,augmentation=False,split='val')
-    else:
-        train_dataset = VQGANDataset(
-            root_dir=cfg.dataset.root_dir,augmentation=True,split='train',stage=cfg.model.stage)
-        val_dataset = VQGANDataset(
-            root_dir=cfg.dataset.root_dir,augmentation=False,split='val')
+    
+
+    train_transforms = get_monai_transforms(cfg.data.train_transforms)
+    eval_transforms = get_monai_transforms(cfg.data.eval_transforms)
+
+    train_dataset = instantiate_from_config(cfg.dataset, mode="train", transforms=train_transforms)
+    val_dataset = instantiate_from_config(cfg.dataset, mode="eval", transforms=eval_transforms)
+
+    # if downsample_ratio == 4:
+    #     train_dataset = VQGANDataset_4x(
+    #         root_dir=cfg.dataset.root_dir,augmentation=True,split='train',stage=cfg.model.stage)
+    #     val_dataset = VQGANDataset_4x(
+    #         root_dir=cfg.dataset.root_dir,augmentation=False,split='val')
+    # else:
+    #     train_dataset = VQGANDataset(
+    #         root_dir=cfg.dataset.root_dir,augmentation=True,split='train',stage=cfg.model.stage)
+    #     val_dataset = VQGANDataset(
+    #         root_dir=cfg.dataset.root_dir,augmentation=False,split='val')
 
     train_dataloader = DataLoader(dataset=train_dataset, batch_size=cfg.model.batch_size,shuffle=True,
                                   num_workers=cfg.model.num_workers)
@@ -60,7 +71,13 @@ def main(cfg_path: str):
 
 
 
-    logger = TensorBoardLogger(cfg.model.default_root_dir, name="my_model")
+    wandb_project = cfg.wandb.get("wandb_project", "PatchVolume")
+    wandb_name = cfg.wandb.get("wandb_name", "my_model")
+    logger = WandbLogger(
+        project=wandb_project,
+        name=wandb_name,
+        save_dir=cfg.model.default_root_dir,
+    )
     trainer = pl.Trainer(
         accelerator='gpu',
         devices=cfg.model.gpus,
